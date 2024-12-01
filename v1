@@ -1,12 +1,16 @@
 CREATE OR REPLACE TEMPORARY TABLE result AS 
 
 WITH successful_open AS (
-    SELECT 
-          * 
-        , ROW_NUMBER() OVER (PARTITION BY ssoid, acct_id ORDER BY root_tstamp DESC) AS rk
-    FROM base
-    WHERE name IN ('success screen', 'successscreen')
+    SELECT * 
+    FROM (
+        SELECT * 
+             , ROW_NUMBER() OVER (PARTITION BY ssoid, acct_id ORDER BY root_tstamp DESC) AS rk
+        FROM base
+        WHERE name IN ('success screen', 'successscreen')
+    ) temp
+    WHERE rk = 1
 )
+
 , usage AS (
     SELECT 
           a.cure_customer_ud
@@ -19,26 +23,28 @@ WITH successful_open AS (
     WHERE a.money_flow_product = 'funding'
     GROUP BY 1, 2
 )
+
 , EligibilityCheck AS (
     SELECT 
           r.ssoid
         , r.acct_id
-        , CASE
-              WHEN a.productid = 4000
-              AND a.account_open_timestamp <= r.root_tstamp 
-              AND a.acct_status = 'Open'
-              THEN 1
-              ELSE 0
+        , CASE 
+            WHEN a.productid = 4000
+                 AND a.account_open_timestamp <= r.root_tstamp 
+                 AND a.acct_status = 'Open'
+            THEN 1
+            ELSE 0
           END AS is_eligible_flag
-        , CASE
-              WHEN a.account_open_timestamp <= r.root_tstamp THEN 1
-              ELSE 0
+        , CASE 
+            WHEN a.account_open_timestamp <= r.root_tstamp THEN 1
+            ELSE 0
           END AS total_flag
     FROM hist_account_temp a
     JOIN successful_open r
         ON a.ssoid = r.ssoid 
         AND a.acct_id = r.ssoid
 )
+
 , EligibilitySummary AS (
     SELECT 
           ssoid
@@ -48,13 +54,14 @@ WITH successful_open AS (
     FROM EligibilityCheck
     GROUP BY 1, 2
 )
+
 SELECT 
       a.ssoid
     , a.acct_id
     , CASE 
-          WHEN LEFT(b.cure_correlation_id, 7) = 'EAS-IPH' THEN 'iphone'
-          WHEN LEFT(b.cure_correlation_id, 7) = 'EAS-AND' THEN 'android'
-          ELSE b.cure_correlation_id
+        WHEN LEFT(b.cure_correlation_id, 7) = 'EAS-IPH' THEN 'iphone'
+        WHEN LEFT(b.cure_correlation_id, 7) = 'EAS-AND' THEN 'android'
+        ELSE b.cure_correlation_id
       END AS mobile_native
     , b.payer_full_name
     , b.payer_postal_code
@@ -62,20 +69,20 @@ SELECT
     , b.API_key
     , transaction_amount
     , CASE 
-          WHEN b.payer_account_type = 'mastercard' OR b.payer_account_type = 'visa' THEN 1
-          ELSE b.payer_account_type 
+        WHEN b.payer_account_type = 'mastercard' OR b.payer_account_type = 'visa' THEN 1
+        ELSE b.payer_account_type 
       END AS visa_or_mastercard_only_metric
     , CASE 
-          WHEN c.success_usage_per_customer = 1 THEN 1 
-          ELSE 0 
+        WHEN c.success_usage_per_customer = 1 THEN 1 
+        ELSE 0 
       END AS onetime_usage_metric
     , CASE 
-          WHEN b.transaction_amount <= 100 THEN 1 
-          ELSE 0 
+        WHEN b.transaction_amount <= 100 THEN 1 
+        ELSE 0 
       END AS initial_amount_less_than_100_metric
     , CASE 
-          WHEN d.eligible_count = 1 AND d.total_count = 1 THEN 1
-          ELSE 0
+        WHEN d.eligible_count = 1 AND d.total_count = 1 THEN 1
+        ELSE 0
       END AS account_count_eligible
 FROM successful_open a
 LEFT JOIN deposite_money_movement_fullfilment_transfer_requested b
@@ -86,4 +93,7 @@ LEFT JOIN usage c
     AND b.acct_id = c.acct_id
 LEFT JOIN EligibilitySummary d
     ON a.ssoid = d.ssoid
-    AND a.acct_id = d.acct_id;
+    AND a.acct_id = d.acct_id
+
+;
+
